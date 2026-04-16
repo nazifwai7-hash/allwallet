@@ -1,4 +1,3 @@
-import csv
 import random
 import os
 import psycopg2
@@ -19,11 +18,9 @@ def mnemonic_to_eth_address(mnemonic_phrase):
 
 def get_db_connection():
     """Railway PostgreSQL veritabanına bağlan"""
-    # Railway'in verdiği DATABASE_URL'i kullan
     database_url = os.environ.get('DATABASE_URL')
     
     if not database_url:
-        # Fallback: DATABASE_PUBLIC_URL dene
         database_url = os.environ.get('DATABASE_PUBLIC_URL')
     
     if not database_url:
@@ -45,7 +42,6 @@ def init_database(conn):
             )
         """)
         
-        # İndeksler
         cur.execute("CREATE INDEX IF NOT EXISTS idx_address ON mnemonic_results(address)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_created_at ON mnemonic_results(created_at)")
         
@@ -82,9 +78,6 @@ def main():
         print("✅ PostgreSQL'e bağlanıldı.")
     except Exception as e:
         print(f"❌ Veritabanı bağlantı hatası: {e}")
-        print("5 saniye içinde yeniden başlatılacak...")
-        import time
-        time.sleep(5)
         return
     
     # Kelimeleri yükle
@@ -106,20 +99,17 @@ def main():
     print(f"💾 PostgreSQL veritabanına kaydediliyor...")
     print("Çıkmak için Ctrl+C tuşlayın.\n")
 
-    # CSV yedekleme (opsiyonel)
-    with open("output.csv", "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(["seed", "address", "timestamp"])
-
-        try:
+    try:
         while True:
             total_attempts += 1
+            
+            # Rastgele 12 kelime seç (tekrarsız)
             random_words = generate_random_mnemonic_no_repeat(words, 12)
             mnemonic = " ".join(random_words)
             
             try:
                 address = mnemonic_to_eth_address(mnemonic)
-            except:
+            except Exception:
                 continue
             
             if address in seen_addresses:
@@ -127,12 +117,27 @@ def main():
             
             seen_addresses.add(address)
             
+            # PostgreSQL'e kaydet
             if save_to_database(conn, mnemonic, address, total_attempts):
                 saved_count += 1
                 print(f"✅ #{total_attempts}: {address}")
+                print(f"   Seed: {mnemonic}\n")
+            else:
+                print(f"⚠️ #{total_attempts}: {address} (zaten kayıtlı)")
+            
+            # Her 10 kayıtta rapor
+            if saved_count % 10 == 0 and saved_count > 0:
+                print(f"📊 RAPOR: {saved_count} adres kaydedildi. ({total_attempts} deneme)\n")
             
     except KeyboardInterrupt:
-        print(f"\nKaydedilen: {saved_count}")
+        print(f"\n\n🛑 DURDURULDU")
+        print(f"   Toplam deneme: {total_attempts}")
+        print(f"   Benzersiz adres: {len(seen_addresses)}")
+        print(f"   Veritabanına kaydedilen: {saved_count}")
+        conn.close()
+        print("   Veritabanı bağlantısı kapatıldı.")
+    except Exception as e:
+        print(f"\n❌ Beklenmeyen hata: {e}")
         conn.close()
 
 if __name__ == "__main__":
