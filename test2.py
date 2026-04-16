@@ -2,10 +2,8 @@ import csv
 import random
 import os
 import psycopg2
-from psycopg2.extras import Json
 from eth_account import Account
 from datetime import datetime
-from urllib.parse import urlparse
 
 def load_words(filename):
     with open(filename, "r", encoding="utf-8") as f:
@@ -20,22 +18,19 @@ def mnemonic_to_eth_address(mnemonic_phrase):
     return acct.address.lower()
 
 def get_db_connection():
-    """PostgreSQL veritabanına bağlan"""
-    # Önce ortam değişkenini kontrol et (Railway, Heroku, vs.)
-    database_url = os.environ.get('postgresql://postgres:yFuJterVtBVLBprWOcCSqvnnzeLKyYHJ@postgres.railway.internal:5432/railway')
+    """Railway PostgreSQL veritabanına bağlan"""
+    # Railway'in verdiği DATABASE_URL'i kullan
+    database_url = os.environ.get('DATABASE_URL')
     
-    if database_url:
-        # Railway/Heroku formatı: postgresql://user:pass@host:port/dbname
-        return psycopg2.connect(database_url)
-    else:
-        # Local PostgreSQL bağlantısı (varsayılan)
-        return psycopg2.connect(
-            host=os.environ.get('DB_HOST', 'postgresql://postgres:yFuJterVtBVLBprWOcCSqvnnzeLKyYHJ@postgres.railway.internal:5432/railway'),
-            database=os.environ.get('DB_NAME', 'railway'),
-            user=os.environ.get('DB_USER', 'postgres'),
-            password=os.environ.get('DB_PASSWORD', 'yFuJterVtBVLBprWOcCSqvnnzeLKyYHJ'),
-            port=os.environ.get('DB_PORT', '5432')
-        )
+    if not database_url:
+        # Fallback: DATABASE_PUBLIC_URL dene
+        database_url = os.environ.get('DATABASE_PUBLIC_URL')
+    
+    if not database_url:
+        raise Exception("DATABASE_URL veya DATABASE_PUBLIC_URL bulunamadı!")
+    
+    print(f"✅ Veritabanına bağlanılıyor...")
+    return psycopg2.connect(database_url)
 
 def init_database(conn):
     """Veritabanı tablosunu oluştur"""
@@ -55,7 +50,7 @@ def init_database(conn):
         cur.execute("CREATE INDEX IF NOT EXISTS idx_created_at ON mnemonic_results(created_at)")
         
         conn.commit()
-        print("✓ Veritabanı tablosu hazır.")
+        print("✅ Veritabanı tablosu hazır.")
 
 def save_to_database(conn, mnemonic, address, attempt_number):
     """Mnemonic ve address'i veritabanına kaydet"""
@@ -72,38 +67,46 @@ def save_to_database(conn, mnemonic, address, attempt_number):
             conn.commit()
             return result is not None
     except Exception as e:
-        print(f"Veritabanı hatası: {e}")
+        print(f"❌ Veritabanı hatası: {e}")
         conn.rollback()
         return False
 
 def main():
+    print("🚀 Mnemonic Generator Başlatılıyor...")
+    print(f"⏰ Zaman: {datetime.now().isoformat()}")
+    
     # Veritabanına bağlan
     try:
         conn = get_db_connection()
         init_database(conn)
-        print(f"✅ PostgreSQL'e bağlanıldı.")
+        print("✅ PostgreSQL'e bağlanıldı.")
     except Exception as e:
         print(f"❌ Veritabanı bağlantı hatası: {e}")
-        print("Devam etmek için ENTER tuşuna bas...")
-        input()
+        print("5 saniye içinde yeniden başlatılacak...")
+        import time
+        time.sleep(5)
         return
     
     # Kelimeleri yükle
-    words = load_words("words.txt")
-    if len(words) < 12:
-        print(f"Hata: En az 12 kelime gerekli. words.txt'te {len(words)} kelime var.")
+    try:
+        words = load_words("words.txt")
+        if len(words) < 12:
+            print(f"❌ Hata: En az 12 kelime gerekli. words.txt'te {len(words)} kelime var.")
+            return
+        print(f"✅ {len(words)} kelime yüklendi.")
+    except FileNotFoundError:
+        print("❌ Hata: words.txt dosyası bulunamadı!")
         return
     
     seen_addresses = set()
     total_attempts = 0
     saved_count = 0
     
-    print(f"\n📚 Toplam {len(words)} kelime yüklendi.")
-    print(f"🎲 Rastgele TEKRARSIZ 12 kelimelik mnemonic'ler üretiliyor...")
+    print(f"\n🎲 Rastgele 12 kelimelik mnemonic'ler üretiliyor...")
     print(f"💾 PostgreSQL veritabanına kaydediliyor...")
     print("Çıkmak için Ctrl+C tuşlayın.\n")
 
-    # CSV'ye de yedekle (opsiyonel)
+    # CSV yedekleme (opsiyonel)
     with open("output.csv", "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(["seed", "address", "timestamp"])
@@ -112,7 +115,7 @@ def main():
             while True:
                 total_attempts += 1
                 
-                # Rastgele TEKRARSIZ 12 kelime seç
+                # Rastgele 12 kelime seç (tekrarsız)
                 random_words = generate_random_mnemonic_no_repeat(words, 12)
                 mnemonic = " ".join(random_words)
                 
@@ -130,17 +133,18 @@ def main():
                 if save_to_database(conn, mnemonic, address, total_attempts):
                     saved_count += 1
                     
-                    # CSV'ye de yedekle
+                    # CSV'ye yedekle
                     writer.writerow([mnemonic, address, datetime.now().isoformat()])
                     f.flush()
                     
-                    print(f"✓ #{total_attempts}: {mnemonic[:50]}... -> {address} (DB'ye kaydedildi, toplam: {saved_count})")
+                    print(f"✅ #{total_attempts}: {address}")
+                    print(f"   Seed: {mnemonic}\n")
                 else:
-                    print(f"⚠️ #{total_attempts}: {mnemonic[:50]}... -> {address} (Zaten kayıtlı veya hata)")
+                    print(f"⚠️ #{total_attempts}: {address} (zaten kayıtlı)")
                 
-                # Her 10 kayıtta bir rapor
+                # Her 10 kayıtta rapor
                 if saved_count % 10 == 0 and saved_count > 0:
-                    print(f"\n📊 RAPOR: {saved_count} adres veritabanına kaydedildi. ({total_attempts} deneme)\n")
+                    print(f"📊 RAPOR: {saved_count} adres kaydedildi. ({total_attempts} deneme)\n")
                 
         except KeyboardInterrupt:
             print(f"\n\n🛑 DURDURULDU")
@@ -150,6 +154,9 @@ def main():
             print(f"   Çıktılar output.csv dosyasına yedeklendi.")
             conn.close()
             print("   Veritabanı bağlantısı kapatıldı.")
+        except Exception as e:
+            print(f"\n❌ Beklenmeyen hata: {e}")
+            conn.close()
 
 if __name__ == "__main__":
     main()
