@@ -112,51 +112,28 @@ def main():
         writer.writerow(["seed", "address", "timestamp"])
 
         try:
-            while True:
-                total_attempts += 1
-                
-                # Rastgele 12 kelime seç (tekrarsız)
-                random_words = generate_random_mnemonic_no_repeat(words, 12)
-                mnemonic = " ".join(random_words)
-                
-                try:
-                    address = mnemonic_to_eth_address(mnemonic)
-                except Exception as e:
-                    continue
-                
-                if address in seen_addresses:
-                    continue
-                
-                seen_addresses.add(address)
-                
-                # PostgreSQL'e kaydet
-                if save_to_database(conn, mnemonic, address, total_attempts):
-                    saved_count += 1
-                    
-                    # CSV'ye yedekle
-                    writer.writerow([mnemonic, address, datetime.now().isoformat()])
-                    f.flush()
-                    
-                    print(f"✅ #{total_attempts}: {address}")
-                    print(f"   Seed: {mnemonic}\n")
-                else:
-                    print(f"⚠️ #{total_attempts}: {address} (zaten kayıtlı)")
-                
-                # Her 10 kayıtta rapor
-                if saved_count % 10 == 0 and saved_count > 0:
-                    print(f"📊 RAPOR: {saved_count} adres kaydedildi. ({total_attempts} deneme)\n")
-                
-        except KeyboardInterrupt:
-            print(f"\n\n🛑 DURDURULDU")
-            print(f"   Toplam deneme: {total_attempts}")
-            print(f"   Benzersiz adres: {len(seen_addresses)}")
-            print(f"   Veritabanına kaydedilen: {saved_count}")
-            print(f"   Çıktılar output.csv dosyasına yedeklendi.")
-            conn.close()
-            print("   Veritabanı bağlantısı kapatıldı.")
-        except Exception as e:
-            print(f"\n❌ Beklenmeyen hata: {e}")
-            conn.close()
+        while True:
+            total_attempts += 1
+            random_words = generate_random_mnemonic_no_repeat(words, 12)
+            mnemonic = " ".join(random_words)
+            
+            try:
+                address = mnemonic_to_eth_address(mnemonic)
+            except:
+                continue
+            
+            if address in seen_addresses:
+                continue
+            
+            seen_addresses.add(address)
+            
+            if save_to_database(conn, mnemonic, address, total_attempts):
+                saved_count += 1
+                print(f"✅ #{total_attempts}: {address}")
+            
+    except KeyboardInterrupt:
+        print(f"\nKaydedilen: {saved_count}")
+        conn.close()
 
 if __name__ == "__main__":
     main()
