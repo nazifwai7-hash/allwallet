@@ -1,5 +1,4 @@
 import random
-import os
 import psycopg2
 from eth_account import Account
 from datetime import datetime
@@ -17,17 +16,8 @@ def mnemonic_to_eth_address(mnemonic_phrase):
     return acct.address.lower()
 
 def get_db_connection():
-    """Railway PostgreSQL veritabanına bağlan"""
-    database_url = os.environ.get('DATABASE_URL')
-    
-    if not database_url:
-        database_url = os.environ.get('DATABASE_PUBLIC_URL')
-    
-    if not database_url:
-        raise Exception("DATABASE_URL veya DATABASE_PUBLIC_URL bulunamadı!")
-    
-    print(f"✅ Veritabanına bağlanılıyor...")
-    return psycopg2.connect(database_url)
+    """Senin verdiğin bilgilerle direkt bağlan"""
+    return psycopg2.connect("postgresql://postgres:yFuJterVtBVLBprWOcCSqvnnzeLKyYHJ@gondola.proxy.rlwy.net:51846/railway")
 
 def init_database(conn):
     """Veritabanı tablosunu oluştur"""
